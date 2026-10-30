@@ -1,0 +1,1191 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Chacha Run</title>
+<style>
+  html, body {
+    margin: 0; height: 100%; background: #000; overflow: hidden;
+    touch-action: none; -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    font-family: "Courier New", Courier, monospace; font-weight: 900;
+  }
+  /* Le body est noir : les bandes noires (letterbox) apparaissent toutes seules. */
+  body { display: flex; align-items: center; justify-content: center; }
+  #wrap { position: relative; background: #6CE0EA; }
+  canvas { width: 100%; height: 100%; display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
+
+  .overlay {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center;
+    background: rgba(20, 40, 60, .45); color: #fff; gap: .6em;
+  }
+  .hidden { display: none !important; }
+  #win { justify-content: flex-start; padding-top: 7%; background: rgba(20, 40, 60, .25); }
+  h1 { margin: 0; font-size: 3.4em; letter-spacing: .05em; color: #FFD23A;
+       text-shadow: .08em .08em 0 #7a3b1c, -.04em -.04em 0 #7a3b1c; }
+  .sub { font-size: 1.5em; text-shadow: .1em .1em 0 rgba(0,0,0,.5); }
+  .big { font-size: 5em; color: #fff; text-shadow: .08em .08em 0 #000; margin: 0; }
+  button.ui {
+    font: inherit; font-size: 2.4em; padding: .3em 1.2em; cursor: pointer;
+    background: #9ECC6B; color: #2c4a14; border: .12em solid #2c4a14;
+    box-shadow: 0 .15em 0 #2c4a14; text-transform: uppercase;
+  }
+  button.ui:active { transform: translateY(.1em); box-shadow: 0 .05em 0 #2c4a14; }
+
+  #sound {
+    position: absolute; top: 1.2%; right: 1.2%; width: 3.2em; height: 3.2em; font-size: 1em;
+    border: 0; border-radius: 50%; background: rgba(0,0,0,.55); color: #fff; cursor: pointer;
+    font-size: 1.6em; line-height: 1; padding: 0;
+  }
+  /* Bouton de saut tactile : rond sombre + flèche blanche */
+  #menuBtn {
+    position: absolute; top: 1.2%; right: 11%; width: 3.2em; height: 3.2em;
+    border: 0; border-radius: 50%; background: rgba(0,0,0,.55); color: #fff; cursor: pointer;
+    font-size: 1.6em; line-height: 1; padding: 0; box-shadow: none; text-transform: none;
+  }
+  #shopList { display: flex; gap: 1em; flex-wrap: wrap; justify-content: center; }
+  .card { background: rgba(0,0,0,.4); border: .15em solid transparent; padding: .5em .8em; display: flex;
+          flex-direction: column; align-items: center; gap: .3em; font-size: 1.2em; }
+  .card.sel { border-color: #FFD23A; }
+  .card canvas { width: 4.2em; height: auto; image-rendering: pixelated; }
+  .lvlbar { display: flex; gap: .8em; }
+  button.lvl { font-size: 1.5em; padding: .25em .8em; }
+  button.lvl:disabled { opacity: .5; cursor: not-allowed; background: #aaa; }
+  #jump {
+    position: absolute; bottom: 6%; left: 50%; transform: translateX(-50%);
+    width: 12%; aspect-ratio: 1; border-radius: 50%;
+    background: rgba(30, 30, 38, .85); display: none; align-items: center; justify-content: center;
+  }
+  #jump svg { width: 50%; height: 50%; }
+  #jump:active { background: rgba(0,0,0,.95); }
+  #wrap.touch #jump { display: flex; }
+
+  #rotate {
+    position: fixed; inset: 0; background: #000; color: #fff; z-index: 10;
+    display: none; align-items: center; justify-content: center; text-align: center;
+    font-size: 5vw; padding: 1em;
+  }
+  @media (orientation: portrait) and (pointer: coarse) { #rotate { display: flex; } }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c" width="960" height="540"></canvas>
+
+  <div id="menu" class="overlay">
+    <h1>CHACHA<br>RUN</h1>
+    <div class="sub">Libère-le à la fin de chaque niveau !</div>
+    <div class="sub" style="font-size:1.1em">Idée originale : Charlotte M.</div>
+    <button class="ui" id="play">Jouer</button>
+    <div class="lvlbar"></div>
+    <button class="ui lvl" id="shopBtn">Boutique</button>
+    <div class="sub" id="menuCoins" style="font-size:1.2em"></div>
+    <div class="sub" style="font-size:1.1em">Espace / &#8593; / clic / touche l'écran pour sauter<br>Saute sous une plateforme : Chacha marche à l'envers ! Resaute pour tomber.</div>
+  </div>
+
+  <div id="lost" class="overlay hidden">
+    <p class="big">Perdu !</p>
+    <div class="sub">On recommence&hellip;</div>
+  </div>
+
+  <div id="shop" class="overlay hidden">
+    <h1 style="font-size:3em">BOUTIQUE</h1>
+    <div class="sub" id="shopCoins"></div>
+    <div id="shopList"></div>
+    <button class="ui lvl" id="shopBack">Retour</button>
+  </div>
+
+  <div id="win" class="overlay hidden">
+    <p class="big" id="winTitle" style="color:#FFD23A;font-size:4em">Bravo !</p>
+    <div class="sub" id="winInfo"></div>
+    <button class="ui" id="replay">Rejouer</button>
+    <div class="lvlbar"></div>
+  </div>
+
+  <button id="menuBtn" class="ui hidden" title="Niveaux">&#9776;</button>
+  <button id="sound" class="ui" title="Son">&#128266;</button>
+  <div id="jump">
+    <svg viewBox="0 0 10 10" shape-rendering="crispEdges"><path fill="#fff" d="M4 1h2v1h1v1h1v1h1v1H7v4H3V5H1V4h1V3h1V2h1z"/></svg>
+  </div>
+</div>
+<div id="rotate">Tourne ton appareil en mode paysage &#8635;</div>
+
+<script>
+(() => {
+'use strict';
+
+/* ==========================================================================
+   RÉGLAGES — modifie ces constantes pour ajuster la difficulté
+   (unités : pixels du monde virtuel 320x180, secondes)
+   ========================================================================== */
+const START_LIVES      = 3;     // vies au départ
+const MAX_LIVES        = 5;     // maximum de vies (les cœurs bonus s'arrêtent là)
+
+// ---- NIVEAUX : chaque niveau écrase les valeurs de LEVEL_DEFAULTS ----
+const LEVEL_DEFAULTS = {
+  duration: 30,                  // durée du niveau (s)
+  speedStart: 95, speedEnd: 140, // vitesse de défilement au début / à la fin (px/s)
+  gapMinStart: 140, gapMaxStart: 220, // écart entre obstacles au début (px)
+  gapMinEnd: 112,   gapMaxEnd: 170,   // écart entre obstacles à la fin (px)
+  pGround: 0.62, pLowBird: 0.16, pHighBird: 0.22, // probas : obstacle au sol / oiseau bas / oiseau haut
+  platObstacleChance: 0.5,       // proba d'un obstacle sur une plateforme
+  platRestChance: 0.25,          // proba d'un grand trou entre plateformes
+  heartCount: 2,                 // cœurs bonus (+1 vie) dans le niveau
+  theme: 'day',                  // day | sunset | night
+};
+const LEVELS = [{ theme: 'day' }, { theme: 'sunset' }, { theme: 'night' }];   // 3 niveaux : seul le paysage change ; ajoute des valeurs (ex. { speedEnd: 160 }) pour durcir un niveau
+const THEMES = {
+  day:    { sky: '#6CE0EA', dots: 'rgba(255,255,255,.85)', ground: '#9ECC6B', groundTop: '#B7DC85', zig: '#7FB04F' },
+  sunset: { sky: '#F6A878', dots: 'rgba(255,235,200,.35)', ground: '#E3C27A', groundTop: '#EFD594', zig: '#C79F55' },
+  night:  { sky: '#26356E', dots: 'rgba(255,255,255,.18)', ground: '#4E8A5A', groundTop: '#65A472', zig: '#386B45' },
+};
+const GRAVITY          = 900;   // gravité (px/s²)
+const JUMP_VELOCITY    = 300;   // force du saut (px/s) -> hauteur = v²/(2g) ≈ 47 px
+const INVINCIBLE_TIME  = 1.5;   // invincibilité après un coup (s)
+const FIRST_OBSTACLE_DIST = 130; // distance hors écran avant le 1er obstacle (px)
+const BIRD_EXTRA_SPEED = 20;    // vitesse propre des oiseaux en plus du décor (px/s)
+const SPAWN_STOP_BEFORE_END = 5; // plus d'obstacle dans les dernières secondes
+const COYOTE_TIME = 0.08, JUMP_BUFFER = 0.10; // tolérance de saut (s)
+// Plateformes : on marche dessus (dessus) ou dessous, à l'envers (collé au plafond)
+const TIER_Y = [118, 86, 54];    // hauteur (haut) de chaque niveau de plateforme
+const PLAT_THICK = 8;            // épaisseur d'une plateforme (px)
+const PLAT_W_MIN = 90, PLAT_W_MAX = 160;   // largeur des plateformes (px)
+const PLAT_GAP_MIN = 25, PLAT_GAP_MAX = 55; // écart entre plateformes consécutives (px)
+const FIRST_PLATFORM_DIST = 200; // distance hors écran avant la 1re plateforme (px)
+// Finale : la cage apparaît à la fin du chrono
+const CAGE_LEAD = 1.0;           // la cage entre à l'écran X s avant la fin du chrono
+const CAGE_STOP_X = 205;         // position écran où le décor s'arrête
+const FINALE_WALK_SPEED = 90;    // vitesse de Chacha vers la cage (px/s)
+const HUG_BEFORE_WIN = 2.6;      // durée du câlin avant l'écran "Bravo !" (s)
+
+/* ---- constantes techniques ---- */
+const W = 320, H = 180;          // résolution virtuelle (16:9)
+const BASE_GROUND = 150;         // hauteur du sol de référence
+const HERO_X = 56;              // position X fixe de Chacha
+const SEG_W = 48;                // largeur d'un segment de sol
+
+/* ==========================================================================
+   Mise en place du canvas
+   ========================================================================== */
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+const wrap = document.getElementById('wrap');
+
+function resize() {
+  let w = window.innerWidth, h = w * 9 / 16;
+  if (h > window.innerHeight) { h = window.innerHeight; w = h * 16 / 9; }
+  wrap.style.width = w + 'px';
+  wrap.style.height = h + 'px';
+  wrap.style.fontSize = (w / 60) + 'px';  // les overlays utilisent des "em"
+  ctx.imageSmoothingEnabled = false;
+}
+window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', resize);
+resize();
+if (window.matchMedia && matchMedia('(pointer: coarse)').matches) wrap.classList.add('touch');
+
+/* ==========================================================================
+   Sprites pixel art (chaînes -> canvas hors écran)
+   ========================================================================== */
+function makeSprite(rows, pal) {
+  const w = Math.max(...rows.map(r => r.length)), h = rows.length;
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d');
+  rows.forEach((row, y) => {
+    for (let x = 0; x < row.length; x++) {
+      const col = pal[row[x]];
+      if (col) { g.fillStyle = col; g.fillRect(x, y, 1, 1); }
+    }
+  });
+  return c;
+}
+
+// ---- Sprites haute résolution (2x) : Chacha en yukata + ombrelle, tracés par primitives sans lissage ----
+const R = 3;                      // résolution du canvas = R x monde virtuel (taille à l'écran inchangée)
+const HERO_H = 17;                // hauteur logique de Chacha (unités du monde) ; son sprite est dessiné 1:1 en pixels canvas
+
+function pen(g) {
+  const px = (x, y, c) => { g.fillStyle = c; g.fillRect(Math.floor(x), Math.floor(y), 1, 1); };
+  return {
+    px,
+    rect: (x, y, w, h, c) => { g.fillStyle = c; g.fillRect(x, y, w, h); },
+    ell(cx, cy, rx, ry, c) {
+      g.fillStyle = c;
+      for (let y = Math.floor(cy - ry); y <= Math.ceil(cy + ry); y++)
+        for (let x = Math.floor(cx - rx); x <= Math.ceil(cx + rx); x++) {
+          const dx = (x + .5 - cx) / rx, dy = (y + .5 - cy) / ry;
+          if (dx * dx + dy * dy <= 1) g.fillRect(x, y, 1, 1);
+        }
+    },
+    line(x0, y0, x1, y1, c, t = 1) {
+      const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)) * 2 || 1;
+      for (let i = 0; i <= n; i++) {
+        const x = x0 + (x1 - x0) * i / n, y = y0 + (y1 - y0) * i / n;
+        g.fillStyle = c; g.fillRect(Math.floor(x), Math.floor(y), t, t);
+      }
+    },
+  };
+}
+// contour sombre d'1 px autour de la forme
+function outline(c, col) {
+  const g = c.getContext('2d'), w = c.width, h = c.height;
+  const d = g.getImageData(0, 0, w, h), a = d.data, out = [];
+  const on = (x, y) => x >= 0 && y >= 0 && x < w && y < h && a[(y * w + x) * 4 + 3] > 0;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++)
+    if (!on(x, y) && (on(x - 1, y) || on(x + 1, y) || on(x, y - 1) || on(x, y + 1))) out.push([x, y]);
+  g.fillStyle = col; out.forEach(([x, y]) => g.fillRect(x, y, 1, 1));
+}
+function raster(w, h, draw) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d'); g.translate(1, 1);          // marge d'1 px pour le contour
+  draw(pen(g)); outline(c, '#2a1a2e');
+  return c;
+}
+
+function makeHero(step, c) {
+  return raster(38, 54, p => {
+    const HAIR = '#1E1614', HAIR2 = '#46332C', SKIN = '#E8AE85', SKIN2 = '#C98C64', BLUSH = '#E9917F';
+    const W = '#EEEBF8', V = '#CFCCE6', { BL, DB, LB } = c;
+    const { OB, OD } = c, GOLD = '#E8B84A';
+    const mum = (cx, cy, r) => {            // chrysanthème bleu
+      p.ell(cx, cy, r, r, BL);
+      for (let k = 0; k < 10; k++) {
+        const a = k * Math.PI / 5;
+        p.line(cx, cy, cx + Math.cos(a) * (r - .5), cy + Math.sin(a) * (r - .5), k % 2 ? LB : DB);
+      }
+      p.ell(cx, cy, r * .3, r * .3, W);
+    };
+    // chignon + fleur de cheveux
+    p.ell(8, 8, 5.5, 5, HAIR); p.ell(12, 12, 4, 8, HAIR);
+    // bras gauche (tient l'ombrelle) + manche
+    p.rect(5, 26, 7, 8, W); mum(8, 30, 3);
+    p.line(8, 33, 4, 36, SKIN, 3); p.ell(3.5, 36, 2.5, 3, SKIN);
+    p.px(5, 34, GOLD); p.px(6, 33, GOLD); p.px(5, 35, GOLD);
+    // corps du yukata
+    for (let y = 24; y < 49; y++) {
+      const grow = y > 40 ? Math.floor((y - 40) / 4) : 0;
+      const l = y < 34 ? 11 : 10 - grow, r = y < 34 ? 27 : 28 + grow;
+      p.rect(l, y, r - l + 1, 1, W);
+      p.rect(l, y, 2, 1, V);                                  // ombre à gauche
+    }
+    p.line(19, 29, 15, 48, V);                                // recouvrement du kimono
+    mum(15, 28, 3.5); mum(24, 30, 3.8); mum(14, 44, 4.5); mum(24, 45, 4.2); mum(20, 40, 2.2);
+    for (const [x, y] of [[12, 36], [27, 38], [18, 47], [12, 41], [29, 43]]) { p.px(x, y, LB); p.px(x + 1, y, LB); }
+    // obi
+    p.rect(10, 34, 19, 6, OB); p.rect(10, 39, 19, 1, OD); p.rect(10, 34, 19, 1, '#7A8499');
+    p.ell(7, 36, 4, 4.5, OB); p.ell(7, 36, 1.8, 2, OD);
+    p.rect(15, 36, 7, 1, '#E4E4EC');
+    // cou + décolleté en V
+    p.rect(18, 22, 5, 3, SKIN2);
+    for (let y = 24; y <= 30; y++) { const hw = Math.max(0, 4 - Math.floor((y - 24) * 0.65)); p.rect(19 - hw, y, hw * 2 + 1, 1, SKIN); }
+    p.line(15, 24, 19, 31, DB); p.line(24, 24, 20, 31, DB);
+    // manche droite (avant)
+    for (let y = 25; y < 46; y++) { const l = y < 31 ? 27 : 28 + Math.floor((y - 31) / 8); p.rect(l, y, 35 - l, 1, W); }
+    p.rect(28, 45, 7, 1, V); mum(31, 34, 3.6); mum(31, 41, 2.6);
+    // jambes / tabi / geta
+    const fx = step ? [14, 20] : [12, 22];
+    for (const x of fx) { p.rect(x, 48, 5, 2, '#F6F6FA'); p.rect(x - 1, 50, 7, 2, '#7A5438'); }
+    // tête
+    p.ell(20, 11, 10, 11, HAIR);
+    p.ell(20.5, 14, 7.5, 8.5, SKIN);
+    p.ell(20, 6, 8.5, 4.5, HAIR);
+    p.ell(12.5, 14, 2, 6, HAIR); p.ell(28, 14, 1.8, 6, HAIR);
+    p.line(20, 1, 20, 8, HAIR2);
+    // visage
+    p.ell(17, 14, 1.2, 1.7, '#2A1810'); p.ell(24, 14, 1.2, 1.7, '#2A1810');
+    p.px(17, 13, '#ffffff'); p.px(24, 13, '#ffffff');
+    p.line(14.5, 11, 18.5, 10.5, HAIR); p.line(22.5, 10.5, 26.5, 11, HAIR);
+    p.px(20, 16, SKIN2); p.px(21, 17, SKIN2);
+    p.ell(15, 18, 2, 1.2, BLUSH); p.ell(26, 18, 2, 1.2, BLUSH);
+    p.px(16, 19, '#B0443A'); p.px(25, 19, '#B0443A');
+    p.rect(17, 20, 8, 1, '#ffffff'); p.rect(18, 21, 6, 1, '#B0443A');
+    // fleur dans les cheveux
+    p.ell(8, 6, 4, 3.5, BL);
+    for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4; p.line(8, 6, 8 + Math.cos(a) * 3.5, 6 + Math.sin(a) * 3, k % 2 ? LB : DB); }
+    p.ell(8, 6, 1, 1, '#ffffff');
+    // boucle d'oreille
+    p.px(14, 20, GOLD);
+  });
+}
+
+
+// Le prisonnier : cheveux châtains plaqués en arrière, barbe de trois jours, smoking noir, nœud papillon
+function makeMan(step, c) {
+  return raster(38, 54, p => {
+    const HAIR = '#7C5C3C', HAIR_H = '#A98456', SKIN = '#E9B793', SKIN2 = '#C99573', STUB = '#B88E70';
+    const { JK, JK2, PANT, BOW } = c, WH = '#F6F6FA', SILVER = '#B9C0D0';
+    // manches + mains
+    p.rect(6, 26, 5, 19, JK); p.rect(29, 26, 5, 19, JK);
+    p.rect(6, 44, 5, 1, JK2); p.rect(29, 44, 5, 1, JK2);
+    p.rect(7, 45, 4, 3, SKIN); p.rect(29, 45, 4, 3, SKIN);
+    // pantalon, jambes, chaussures
+    p.rect(12, 38, 16, 12, PANT); p.rect(19, 44, 2, 6, '#2a1a2e');
+    const fx = step ? [13, 20] : [12, 22];
+    for (const x of fx) { p.rect(x, 49, 7, 3, '#0A0A10'); p.px(x + 1, 49, '#4A4A58'); }
+    // veste de smoking + revers
+    for (let y = 24; y < 41; y++) p.rect(10, y, 20, 1, JK);
+    p.line(14, 25, 19, 38, JK2, 1); p.line(26, 25, 21, 38, JK2, 1);
+    // plastron blanc + boutons
+    for (let y = 24; y < 39; y++) { const hw = 4 - Math.floor((y - 24) / 5); p.rect(20 - hw, y, hw * 2, 1, WH); }
+    p.px(19, 31, SILVER); p.px(19, 35, SILVER);
+    // nœud papillon
+    p.rect(15, 24, 5, 4, BOW); p.rect(21, 24, 5, 4, BOW); p.rect(19, 25, 3, 3, '#2A2A34');
+    // cou
+    p.rect(17, 21, 6, 4, SKIN2);
+    // tête
+    p.ell(20, 10, 9.5, 10, HAIR);
+    p.ell(12.5, 14, 1.3, 2, SKIN); p.ell(28.5, 14, 1.3, 2, SKIN);
+    p.ell(20.5, 14, 7.5, 9, SKIN);
+    p.ell(20, 6, 8.8, 4.8, HAIR);
+    p.line(13, 7, 21, 2, HAIR_H); p.line(16, 8, 25, 3, HAIR_H); p.line(19, 8, 27, 5, HAIR_H);
+    p.rect(12, 9, 2, 6, HAIR); p.rect(27, 9, 2, 6, HAIR);
+    // barbe de trois jours
+    for (let y = 18; y <= 23; y++) for (let x = 13; x <= 28; x++) {
+      const dx = (x + .5 - 20.5) / 7.5, dy = (y + .5 - 14) / 9;
+      if (dx * dx + dy * dy <= 1 && (x + y) % 2 === 0) p.px(x, y, STUB);
+    }
+    // yeux bleus, sourcils, nez, bouche
+    p.ell(17, 13, 1.5, 1, '#4F86AE'); p.ell(24, 13, 1.5, 1, '#4F86AE');
+    p.px(17, 12, '#2A1810'); p.px(24, 12, '#2A1810');
+    p.line(14, 10, 19, 10, '#5A4028', 2); p.line(22, 10, 27, 10, '#5A4028', 2);
+    p.px(20, 16, SKIN2); p.px(21, 17, SKIN2); p.px(20, 17, SKIN2);
+    p.rect(18, 20, 5, 1, '#9A5A4C'); p.px(17, 19, '#9A5A4C'); p.px(23, 19, '#9A5A4C');
+  });
+}
+
+// ---- personnages jouables (achetables avec les pièces) ----
+const COL_GIRL = {
+  blue:  { BL: '#2C2E8F', DB: '#1B1E66', LB: '#7C86D8', OB: '#58627A', OD: '#3C4458' },
+  pink:  { BL: '#C2417A', DB: '#8A1E4E', LB: '#F29BC0', OB: '#7B4B5E', OD: '#4F2E3C' },
+  green: { BL: '#2F8F5A', DB: '#1B5E3A', LB: '#8EE0A8', OB: '#6A5A3A', OD: '#463A22' },
+};
+const COL_MAN = {
+  black: { JK: '#23232D', JK2: '#3A3A47', PANT: '#15151D', BOW: '#0E0E14' },
+  white: { JK: '#E6E6EE', JK2: '#BFC3D6', PANT: '#CFD3E2', BOW: '#B02A3A' },
+};
+const girl = (id, name, price, col) => ({ id, name, price, kind: 'girl', sleeve: '#EEEBF8', skin: '#E8AE85',
+  frames: [makeHero(0, col), makeHero(1, col)] });
+const man = (id, name, price, col) => ({ id, name, price, kind: 'man', sleeve: col.JK, skin: '#E9B793',
+  frames: [makeMan(0, col), makeMan(1, col)] });
+const CHARS = [
+  girl('chacha', 'Chacha', 0, COL_GIRL.blue),
+  girl('rose', 'Chacha rose', 40, COL_GIRL.pink),
+  girl('verte', 'Chacha verte', 60, COL_GIRL.green),
+  man('smoking', 'Le smoking', 80, COL_MAN.black),
+  man('blanc', 'Smoking blanc', 100, COL_MAN.white),
+];
+const selChar = () => CHARS.find(c => c.id === save.selected) || CHARS[0];
+// le prisonnier est l'autre "camp" : un homme si on joue une fille, Chacha si on joue un homme
+const prisChar = () => selChar().kind === 'girl' ? CHARS[3] : CHARS[0];
+
+const BIRD_PAL = { b: '#3F7FE0', d: '#2A56A8', l: '#9CC8FF', y: '#FFD23A', k: '#101018', w: '#ffffff' };
+const BIRD = [
+  makeSprite([
+    "........dd......",
+    ".......dbbd.....",
+    "......dbbbd.....",
+    "..dddddbbbbdd...",
+    ".yyddbbbbbbbbd..",
+    "yyyybwkbbbbbbbd.",
+    ".yyybbbbbbbbbbd.",
+    "..y.bllllllbbd..",
+    "....bllllllbd...",
+    ".....dbbbbdd....",
+    "......d..d......",
+  ], BIRD_PAL),
+  makeSprite([
+    "................",
+    "................",
+    "......dd........",
+    "....ddbbdd......",
+    ".yyddbbbbbbbbd..",
+    "yyyybwkbbbbbbbd.",
+    ".yyybbbbbbbbbbd.",
+    "..y.bllllllbbd..",
+    "...dddbllllbd...",
+    "....dddbbbbdd...",
+    "......dd..dd....",
+  ], BIRD_PAL),
+];
+
+// Dangers : feu (animé), plante carnivore, cactus
+const FIRE_PAL = { R: '#E03A1E', O: '#FF8A1E', Y: '#FFD23A', W: '#FFF3B0', k: '#6B4128', K: '#3E2412' };
+const FIRE_BASE = [
+  "..RROOOORRR.",
+  "..RROOYOORR.",
+  "..ROOYYYOOR.",
+  "..ROYYWYYOR.",
+  "..ROYWWWYOR.",
+  "..ROYYWYYOR.",
+  ".kkkkkkkkkk.",
+  ".KkKkKkKkKK.",
+];
+const FIRE = [
+  makeSprite([".....R......", ".....RR..R..", "....RRR..RR.", "...RRORR.RR.", "...RROORRRR.", ...FIRE_BASE], FIRE_PAL),
+  makeSprite(["......R.....", ".R...RR.....", ".RR..RRR....", ".RR.RRORR...", ".RRRRROORR..", ...FIRE_BASE], FIRE_PAL),
+];
+const PLANT = makeSprite([
+  "..PPPPPPPP..",
+  ".PppppppppP.",
+  ".PppppppppP.",
+  ".PwpwpwpwpP.",
+  "..mmmmmmmm..",
+  ".PwpwpwpwpP.",
+  ".PppppppppP.",
+  "..PPPPPPPP..",
+  "....gggg....",
+  "..gg.gG..gg.",
+  "...ggGgggg..",
+  ".....gG.....",
+  ".....gG.....",
+  "...GGGGGGG..",
+], { P: '#7A1E48', p: '#C0356E', w: '#ffffff', m: '#2A0E1A', g: '#3E9A3A', G: '#2A6E2A' });
+const CACTUS = makeSprite([
+  ".....ff.....",
+  ".....cc.....",
+  "..cw.cCc.wc.",
+  "..cc.cCc.cc.",
+  "..ccccCcccc.",
+  ".....cCc....",
+  ".....cCc....",
+  ".....cCc....",
+  ".....cCc....",
+  ".....cCc....",
+  ".....cCc....",
+  "....cCCCc...",
+], { f: '#FF7AA8', c: '#4E9A3E', C: '#2F6B2A', w: '#E8F4C8' });
+const HAZARDS = [{ anim: FIRE }, { spr: PLANT }, { spr: CACTUS }];
+const COIN = makeSprite([
+  "..yyyy..",
+  ".yYYYYy.",
+  "yYhYYYdy",
+  "yYhYYYdy",
+  "yYhYYYdy",
+  "yYYYYddy",
+  ".yYYddy.",
+  "..yyyy..",
+], { y: '#B8760C', Y: '#FFD23A', h: '#FFF3B0', d: '#E0A81E' });
+
+const HEART_ROWS = [
+  ".rrr.rrr.",
+  "rrwrrrrrr",
+  "rwrrrrrrr",
+  "rrrrrrrrr",
+  ".rrrrrrr.",
+  "..rrrrr..",
+  "...rrr...",
+  "....r....",
+];
+const HEART_FULL  = makeSprite(HEART_ROWS, { r: '#E83A4E', w: '#ffb3bd' });
+const HEART_EMPTY = makeSprite(HEART_ROWS, { r: 'rgba(40,60,80,.55)', w: 'rgba(40,60,80,.55)' });
+
+/* ==========================================================================
+   Audio (Web Audio API, sons générés)
+   ========================================================================== */
+let actx = null, muted = false;
+function audio() {
+  if (!actx) { const C = window.AudioContext || window.webkitAudioContext; if (C) actx = new C(); }
+  if (actx && actx.state === 'suspended') actx.resume();
+  return actx;
+}
+function tone(freq, dur, type = 'square', vol = 0.12, slideTo = null, delay = 0) {
+  if (muted || !actx) return;
+  const t = actx.currentTime + delay;
+  const o = actx.createOscillator(), g = actx.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(freq, t);
+  if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(actx.destination);
+  o.start(t); o.stop(t + dur + 0.02);
+}
+const sfx = {
+  jump: () => tone(300, 0.16, 'square', 0.09, 700),
+  hit:  () => { tone(220, 0.3, 'sawtooth', 0.14, 50); tone(120, 0.25, 'square', 0.08, 40); },
+  win:  () => [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.18, 'square', 0.1, null, i * 0.13)),
+  click: () => { tone(900, 0.05, 'square', 0.1); tone(600, 0.08, 'square', 0.1, null, 0.06); },
+  coin:  () => { tone(1250, 0.06, 'square', 0.06); tone(1700, 0.1, 'square', 0.06, null, 0.05); },
+  up:    () => [784, 1047, 1319].forEach((f, i) => tone(f, 0.14, 'square', 0.09, null, i * 0.07)),
+  gate:  () => tone(120, 0.9, 'sawtooth', 0.07, 320),
+  heart: () => [660, 880, 1100].forEach((f, i) => tone(f, 0.25, 'sine', 0.14, null, i * 0.12)),
+  lose: () => [392, 330, 262, 196].forEach((f, i) => tone(f, 0.25, 'triangle', 0.14, null, i * 0.2)),
+};
+const soundBtn = document.getElementById('sound');
+soundBtn.addEventListener('click', e => {
+  muted = !muted;
+  soundBtn.innerHTML = muted ? '&#128263;' : '&#128266;';
+  soundBtn.blur();
+});
+
+/* ==========================================================================
+   Sol : hauteur variable par segments
+   ========================================================================== */
+let gOff = [];                       // décalage de hauteur de chaque segment
+function groundTop(worldX) {
+  const i = Math.max(0, Math.floor(worldX / SEG_W));
+  while (gOff.length <= i) {         // marche aléatoire douce : 0, 2 ou 4 px
+    const prev = gOff.length ? gOff[gOff.length - 1] : 0;
+    gOff.push(Math.max(0, Math.min(4, prev + (Math.floor(Math.random() * 3) - 1) * 2)));
+  }
+  return BASE_GROUND + gOff[i];
+}
+
+/* ==========================================================================
+   État du jeu
+   ========================================================================== */
+let levelIdx = 0, cfg = { ...LEVEL_DEFAULTS, ...LEVELS[0] };
+const T = () => THEMES[cfg.theme];
+// niveaux débloqués (le 1er est toujours ouvert), mémorisés dans le navigateur
+// sauvegarde (pièces, personnages achetés, niveaux débloqués) dans le navigateur
+let save = { coins: 0, owned: ['chacha'], selected: 'chacha', unlocked: 0 };
+try { Object.assign(save, JSON.parse(localStorage.getItem('chacha_save') || '{}')); } catch (e) {}
+const persist = () => { try { localStorage.setItem('chacha_save', JSON.stringify(save)); } catch (e) {} };
+let unlocked = Math.min(LEVELS.length - 1, Math.max(0, save.unlocked | 0));
+let pickups, heartTimes, heartIdx, banner, nextCoin, shopOpen = false;
+let state = 'menu';                  // menu | play | lost | win
+let scroll, time, lives, speed, nextSpawn, obstacles, particles;
+let platforms, nextPlat, platTier;
+let cage, finale, heroDX;   // finale : cage, état de la scène, décalage X de Chacha
+// fy = point de contact (pieds) ; gdir = 1 debout (pieds en bas), -1 à l'envers (pieds en haut)
+let fy, vy, gdir, stuck, grounded, coyote, jumpBuf, invincible, shake, flash, stateLock, lostTimer;
+
+function reset() {
+  scroll = 0; time = 0; lives = START_LIVES; speed = cfg.speedStart;
+  nextSpawn = W + FIRST_OBSTACLE_DIST;
+  platforms = []; nextPlat = W + FIRST_PLATFORM_DIST; platTier = 0;
+  obstacles = []; particles = []; gOff = [];
+  cage = null; finale = null; heroDX = 0;
+  pickups = []; banner = 0; heartIdx = 0; nextCoin = scroll + W + 200;
+  heartTimes = Array.from({ length: cfg.heartCount }, (_, i) =>
+    (i + 1) * (cfg.duration - 6) / (cfg.heartCount + 1) + (Math.random() - .5) * 2);
+  fy = groundTop(HERO_X + 6); vy = 0; gdir = 1; stuck = null; grounded = true;
+  coyote = 0; jumpBuf = 0; invincible = 0; shake = 0; flash = 0; lostTimer = 0;
+}
+reset();
+
+const $ = id => document.getElementById(id);
+function showOverlay(name) {
+  renderLevelBars();
+  shopOpen = name === 'shop';
+  if (shopOpen) renderShop();
+  $('menuCoins').textContent = 'Pièces : ' + save.coins;
+  $('menuBtn').classList.toggle('hidden', name === 'menu' || name === 'win' || name === 'shop');
+  ['menu', 'lost', 'win', 'shop'].forEach(n => $(n).classList.toggle('hidden', n !== name));
+}
+
+function renderShop() {
+  $('shopCoins').textContent = 'Pièces : ' + save.coins;
+  const list = $('shopList'); list.innerHTML = '';
+  for (const c of CHARS) {
+    const card = document.createElement('div');
+    card.className = 'card' + (save.selected === c.id ? ' sel' : '');
+    const cv = document.createElement('canvas');
+    cv.width = c.frames[0].width; cv.height = c.frames[0].height;
+    cv.getContext('2d').drawImage(c.frames[0], 0, 0);
+    const nm = document.createElement('div'); nm.textContent = c.name;
+    const b = document.createElement('button'); b.className = 'ui lvl';
+    if (!save.owned.includes(c.id)) {
+      b.textContent = 'Acheter ' + c.price; b.disabled = save.coins < c.price;
+      b.addEventListener('click', () => {
+        save.coins -= c.price; save.owned.push(c.id); save.selected = c.id; persist(); sfx.up(); renderShop();
+        $('menuCoins').textContent = 'Pièces : ' + save.coins;
+      });
+    } else if (save.selected === c.id) {
+      b.textContent = 'Choisi'; b.disabled = true;
+    } else {
+      b.textContent = 'Choisir';
+      b.addEventListener('click', () => { save.selected = c.id; persist(); renderShop(); });
+    }
+    card.append(cv, nm, b); list.appendChild(card);
+  }
+}
+
+function renderLevelBars() {
+  $('menuCoins').textContent = 'Pièces : ' + save.coins;
+  document.querySelectorAll('.lvlbar').forEach(bar => {
+    bar.innerHTML = '';
+    LEVELS.forEach((_, i) => {
+      const b = document.createElement('button');
+      const locked = i > unlocked;
+      b.className = 'ui lvl'; b.disabled = locked;
+      b.textContent = locked ? '\u{1F512} ' + (i + 1) : 'Niveau ' + (i + 1);
+      b.addEventListener('click', () => startLevel(i, false));
+      bar.appendChild(b);
+    });
+  });
+}
+
+function startLevel(idx, keepLives) {
+  audio();
+  const carried = lives;
+  levelIdx = idx; cfg = { ...LEVEL_DEFAULTS, ...LEVELS[idx] };
+  reset();
+  if (keepLives) lives = carried;
+  banner = 2;
+  state = 'play';
+  showOverlay(null);
+  document.activeElement && document.activeElement.blur();
+}
+const startGame = () => startLevel(0, false);
+// bouton de l'écran de victoire : niveau suivant, ou on recommence tout après le dernier
+function winAction() {
+  if (levelIdx < LEVELS.length - 1) startLevel(levelIdx + 1, true); else startLevel(0, false);
+}
+function winGame() {
+  state = 'win'; stateLock = performance.now() + 700;
+  const last = levelIdx >= LEVELS.length - 1;
+  if (!last && unlocked < levelIdx + 1) {            // débloque le niveau suivant
+    unlocked = levelIdx + 1; save.unlocked = unlocked; persist();
+  }
+  $('winTitle').textContent = last ? 'Bravo !' : 'Niveau ' + (levelIdx + 1) + ' terminé !';
+  $('winInfo').textContent = (last ? 'Tous les niveaux sont finis ! ' : '') + 'Vies : ' + '\u2665'.repeat(lives);
+  $('replay').textContent = last ? 'Rejouer' : 'Niveau suivant';
+  showOverlay('win'); sfx.win();
+}
+function loseGame() {
+  state = 'lost'; lostTimer = 2.2;
+  showOverlay('lost'); sfx.lose();
+}
+
+/* ==========================================================================
+   Entrées
+   ========================================================================== */
+function pressJump() {
+  if (state === 'play') jumpBuf = JUMP_BUFFER;
+}
+window.addEventListener('keydown', e => {
+  if (shopOpen) return;
+  if (e.code === 'Space' || e.code === 'ArrowUp') {
+    e.preventDefault();
+    if (e.repeat) return;
+    if (state === 'menu') startGame();
+    else if (state === 'win' && performance.now() > stateLock) winAction();
+    else pressJump();
+  } else if (e.code === 'Enter' && state === 'menu') startGame();
+});
+window.addEventListener('keyup', e => { if (e.code === 'Space') e.preventDefault(); });
+
+const isUi = t => t.closest && t.closest('button');
+wrap.addEventListener('touchstart', e => {
+  wrap.classList.add('touch');
+  if (isUi(e.target)) return;
+  e.preventDefault();
+  pressJump();
+}, { passive: false });
+wrap.addEventListener('mousedown', e => { if (!isUi(e.target)) pressJump(); });
+$('play').addEventListener('click', startGame);
+$('shopBtn').addEventListener('click', () => { audio(); showOverlay('shop'); });
+$('shopBack').addEventListener('click', () => showOverlay('menu'));
+$('menuBtn').addEventListener('click', () => { reset(); state = 'menu'; showOverlay('menu'); });
+renderLevelBars();
+$('replay').addEventListener('click', winAction);
+
+/* ==========================================================================
+   Obstacles
+   ========================================================================== */
+function spawnObstacle() {
+  const prog = time / cfg.duration;
+  const r = Math.random();
+  let extraGap = 0;
+  if (r < cfg.pGround) {
+    const hz = HAZARDS[Math.floor(Math.random() * HAZARDS.length)];
+    const spr = hz.spr || hz.anim[0];
+    obstacles.push({ kind: 'ground', spr, anim: hz.anim, wx: nextSpawn, w: spr.width, h: spr.height, hit: false });
+  } else {
+    const high = r > cfg.pGround + cfg.pLowBird;
+    const spr = BIRD[0];
+    // l'oiseau est plus rapide que le décor : on le décale pour qu'il arrive "à l'heure"
+    const dist = nextSpawn - scroll - HERO_X;
+    const wx = nextSpawn + dist * BIRD_EXTRA_SPEED / speed;
+    obstacles.push({
+      kind: 'bird', spr, wx, w: spr.width, h: spr.height, hit: false, high,
+      baseY: high ? BASE_GROUND - 24 - spr.height : BASE_GROUND - 3 - spr.height,
+      phase: Math.random() * 6,
+    });
+    if (high) extraGap = 40;         // laisse le temps de se repositionner
+  }
+  const gmin = cfg.gapMinStart + (cfg.gapMinEnd - cfg.gapMinStart) * prog;
+  const gmax = cfg.gapMaxStart + (cfg.gapMaxEnd - cfg.gapMaxStart) * prog;
+  nextSpawn += gmin + Math.random() * (gmax - gmin) + extraGap;
+}
+
+function spawnHeart() {
+  const x = scroll + W + 20;
+  const pl = platforms.find(p => p.wx <= x && p.wx + p.w >= x);
+  const y = pl ? pl.y - 12 : (Math.random() < 0.5 ? BASE_GROUND - 10 : BASE_GROUND - 36);
+  pickups.push({ kind: 'heart', wx: x, y, bob: Math.random() * 6, got: false });
+}
+
+function spawnCoins() {
+  const x0 = nextCoin, n = 3 + Math.floor(Math.random() * 3);
+  const pl = platforms.find(p => p.wx <= x0 && p.wx + p.w >= x0 + n * 14);
+  const arc = !pl && Math.random() < 0.5;
+  for (let i = 0; i < n; i++) {
+    const y = pl ? pl.y - 11 : arc ? BASE_GROUND - 14 - 24 * Math.sin(Math.PI * i / Math.max(1, n - 1)) : BASE_GROUND - 10;
+    pickups.push({ kind: 'coin', wx: x0 + i * 14, y, bob: i * 0.6, got: false });
+  }
+}
+
+function spawnPlatform() {
+  // un niveau de plus, pareil ou moins (max 1 niveau de plus : toujours atteignable en sautant)
+  const deltas = [-2, -1, -1, 0, 1, 1];
+  platTier = platTier === 0 ? 1
+    : Math.max(1, Math.min(TIER_Y.length, platTier + deltas[Math.floor(Math.random() * deltas.length)]));
+  const w = PLAT_W_MIN + Math.floor(Math.random() * (PLAT_W_MAX - PLAT_W_MIN));
+  const p = { wx: nextPlat, w, y: TIER_Y[platTier - 1] };
+  platforms.push(p);
+  if (w >= 110 && Math.random() < cfg.platObstacleChance) {
+    const bottom = Math.random() < 0.5;       // obstacle dessous (plafond) ou dessus
+    const hz = bottom ? HAZARDS[1] : HAZARDS[Math.floor(Math.random() * HAZARDS.length)];  // dessous : plante seulement
+    const spr = hz.spr || hz.anim[0];
+    obstacles.push({
+      kind: 'plat', spr, anim: hz.anim, w: spr.width, h: spr.height, hit: false, flip: bottom,
+      wx: p.wx + 28 + Math.random() * (w - 56 - spr.width),
+      fixedY: bottom ? p.y + PLAT_THICK : p.y - spr.height,
+    });
+  }
+  const rest = Math.random() < cfg.platRestChance;
+  nextPlat += w + (rest ? 90 + Math.random() * 70
+                        : PLAT_GAP_MIN + Math.random() * (PLAT_GAP_MAX - PLAT_GAP_MIN));
+}
+
+function obstacleY(o) {
+  if (o.fixedY !== undefined) return o.fixedY;
+  if (o.kind === 'bird') return o.baseY + Math.sin(time * 6 + o.phase) * 2;
+  return groundTop(o.wx + o.w / 2) - o.h;
+}
+
+/* ==========================================================================
+   Particules et coups
+   ========================================================================== */
+function burst(x, y, cols, n, spd) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, s = spd * (0.4 + Math.random());
+    particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 20,
+                     life: 0.5 + Math.random() * 0.3, col: cols[i % cols.length] });
+  }
+}
+function hurt() {
+  lives--; invincible = INVINCIBLE_TIME; shake = 0.25; flash = 0.35;
+  sfx.hit();
+  burst(HERO_X + 6, fy - 8 * gdir,['#F7A1C4', '#B26F3E', '#fff', '#E83A4E'], 14, 90);
+  if (lives <= 0) loseGame();
+}
+
+/* ==========================================================================
+   Finale : cage -> Chacha la libère -> câlin -> écran "Bravo !"
+   ========================================================================== */
+function startFinale() {
+  state = 'finale';
+  obstacles = []; platforms = [];
+  if (gdir === -1) { gdir = 1; fy += HERO_H; }
+  stuck = null; vy = 0; invincible = 0; jumpBuf = 0;
+  const cx = cage.wx - scroll;
+  finale = { phase: 'walk', t: 0, open: 0, px: cx + 7, cageX: cx, hearts: [], heartT: 0, gate: false };
+}
+
+function updateFinale(dt) {
+  const f = finale;
+  f.t += dt;
+  // Chacha retombe au sol si elle était en l'air
+  const gy = groundTop(scroll + HERO_X + heroDX + 6);
+  vy += GRAVITY * dt; fy += vy * dt;
+  if (fy >= gy) { fy = gy; vy = 0; }
+  grounded = true; gdir = 1;
+
+  if (f.phase === 'walk') {
+    heroDX += FINALE_WALK_SPEED * dt;
+    if (HERO_X + heroDX >= f.cageX - 26) { f.phase = 'open'; f.t = 0; sfx.click(); }
+  } else if (f.phase === 'open') {
+    if (f.t >= 0.4 && !f.gate) { f.gate = true; sfx.gate(); }
+    f.open = Math.max(0, Math.min(1, (f.t - 0.4) / 0.9));
+    if (f.open >= 1) { f.phase = 'out'; f.t = 0; }
+  } else if (f.phase === 'out') {
+    f.px -= 34 * dt;
+    const target = HERO_X + heroDX + 12;
+    if (f.px <= target) { f.px = target; f.phase = 'hug'; f.t = 0; sfx.heart(); }
+  } else {
+    f.heartT -= dt;
+    if (f.heartT <= 0) { f.hearts.push({ t: 0, dx: (Math.random() - .5) * 14 }); f.heartT = 0.35; }
+    if (state === 'finale' && f.t >= HUG_BEFORE_WIN) winGame();
+  }
+  for (const h of f.hearts) h.t += dt;
+  f.hearts = f.hearts.filter(h => h.t < 1.6);
+}
+
+/* ==========================================================================
+   Mise à jour
+   ========================================================================== */
+function update(dt) {
+  // particules et effets (toujours actifs)
+  for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 300 * dt; p.life -= dt; }
+  particles = particles.filter(p => p.life > 0);
+  shake = Math.max(0, shake - dt); flash = Math.max(0, flash - dt);
+  if (invincible > 0) invincible = Math.max(0, invincible - dt);
+
+  if (state === 'finale' || (state === 'win' && finale)) { updateFinale(dt); return; }
+  if (state === 'menu' || state === 'win') { scroll += 30 * dt; return; }
+  if (state === 'lost') {
+    lostTimer -= dt;
+    if (lostTimer <= 0) startLevel(levelIdx, false);
+    return;
+  }
+
+  // ----- état "play" -----
+  time = Math.min(cfg.duration, time + dt);
+  if (time >= cfg.duration - CAGE_LEAD && !cage) cage = { wx: scroll + W + 10 };
+  banner = Math.max(0, banner - dt);
+  while (time < cfg.duration - SPAWN_STOP_BEFORE_END && nextCoin < scroll + W + 30) { spawnCoins(); nextCoin += 260 + Math.random() * 220; }
+  while (heartIdx < heartTimes.length && time >= heartTimes[heartIdx]) { spawnHeart(); heartIdx++; }
+  const prog = time / cfg.duration;
+  speed = cfg.speedStart + (cfg.speedEnd - cfg.speedStart) * prog;
+  scroll += speed * dt;
+  if (cage && cage.wx - scroll <= CAGE_STOP_X) { startFinale(); return; }
+
+  // apparition des obstacles
+  while (time < cfg.duration - SPAWN_STOP_BEFORE_END && nextSpawn < scroll + W + 30) spawnObstacle();
+  if (time < cfg.duration - SPAWN_STOP_BEFORE_END) {
+    while (nextPlat < scroll + W + 30) spawnPlatform();
+  }
+  for (const o of obstacles) if (o.kind === 'bird') o.wx -= BIRD_EXTRA_SPEED * dt;
+  obstacles = obstacles.filter(o => o.wx - scroll > -40);
+  platforms = platforms.filter(p => p.wx + p.w - scroll > -10);
+
+  // physique de Chacha
+  const cx = scroll + HERO_X + 6;              // centre de Chacha dans le monde
+  const onPlat = p => cx >= p.wx && cx <= p.wx + p.w;
+  coyote = grounded ? COYOTE_TIME : coyote - dt;
+  jumpBuf -= dt;
+  if (jumpBuf > 0 && coyote > 0) {
+    if (gdir === 1) { vy = -JUMP_VELOCITY; }                       // saut vers le haut
+    else { gdir = 1; fy += HERO_H; vy = 60; stuck = null; }       // se décolle du plafond et tombe
+    grounded = false; coyote = 0; jumpBuf = 0;
+    sfx.jump();
+    burst(HERO_X + 6, fy, ['#fff', '#d8f3d0'], 4, 30);
+  }
+  if (gdir === 1) {
+    const oy = fy;
+    vy += GRAVITY * dt;
+    fy += vy * dt;
+    grounded = false;
+    if (vy >= 0) {
+      // atterrissage : sol ou dessus d'une plateforme
+      let floor = groundTop(cx);
+      for (const p of platforms) if (onPlat(p) && oy <= p.y + PLAT_THICK && p.y < floor) floor = p.y;
+      if (fy >= floor) { fy = floor; vy = 0; grounded = true; }
+    } else {
+      // tête qui cogne le dessous d'une plateforme : Chacha s'y colle, à l'envers
+      for (const p of platforms) {
+        const pb = p.y + PLAT_THICK;
+        if (onPlat(p) && oy - HERO_H >= pb - 1 && fy - HERO_H <= pb) {
+          gdir = -1; stuck = p; fy = pb; vy = 0; grounded = true;
+          burst(HERO_X + 6, pb, ['#fff', '#d8f3d0'], 4, 30);
+          break;
+        }
+      }
+    }
+  } else if (stuck && onPlat(stuck)) {
+    fy = stuck.y + PLAT_THICK; vy = 0; grounded = true;            // marche sous la plateforme
+  } else {
+    gdir = 1; fy += HERO_H; vy = 0; stuck = null; grounded = false; // fin de plateforme : chute
+  }
+
+  // cœurs bonus : +1 vie
+  const hb = { x: HERO_X + 3, y: gdir === 1 ? fy - HERO_H + 2 : fy + 1, w: 7, h: HERO_H - 3 };
+  for (const k of pickups) {
+    const kx = k.wx - scroll, ky = k.y + Math.sin(time * 5 + k.bob) * 2;
+    const kw = k.kind === 'heart' ? 9 : 8;
+    if (!k.got && hb.x < kx + kw && hb.x + hb.w > kx && hb.y < ky + 8 && hb.y + hb.h > ky) {
+      k.got = true;
+      if (k.kind === 'heart') {
+        if (lives < MAX_LIVES) lives++;
+        sfx.up(); burst(kx + 4.5, ky + 4, ['#E83A4E', '#ffb3bd', '#fff'], 10, 70);
+      } else {
+        save.coins++; persist(); sfx.coin(); burst(kx + 4, ky + 4, ['#FFD23A', '#FFF3B0'], 5, 40);
+      }
+    }
+  }
+  pickups = pickups.filter(k => !k.got && k.wx - scroll > -20);
+
+  // collisions (boîtes légèrement réduites pour rester indulgent)
+  if (invincible <= 0) {
+    const sb = { x: HERO_X + 3, y: gdir === 1 ? fy - HERO_H + 2 : fy + 1, w: 7, h: HERO_H - 3 };
+    for (const o of obstacles) {
+      if (o.hit) continue;
+      const ox = o.wx - scroll + 2, oy = obstacleY(o) + 1, ow = o.w - 4, oh = o.h - 2;
+      if (sb.x < ox + ow && sb.x + sb.w > ox && sb.y < oy + oh && sb.y + sb.h > oy) {
+        o.hit = true; hurt(); break;
+      }
+    }
+  }
+}
+
+/* ==========================================================================
+   Rendu
+   ========================================================================== */
+function drawBackground(sc) {
+  if (cfg.theme === 'sunset') {                      // ciel en dégradé de coucher de soleil
+    const g = ctx.createLinearGradient(0, 0, 0, BASE_GROUND);
+    g.addColorStop(0, '#5B4A9E'); g.addColorStop(0.55, '#E57F9E'); g.addColorStop(1, '#FFC27A');
+    ctx.fillStyle = g;
+  } else ctx.fillStyle = T().sky;
+  ctx.fillRect(0, 0, W, H);
+  // petits points blancs en parallaxe lente
+  const off = Math.floor(sc * 0.25) % 16;
+  ctx.fillStyle = T().dots;
+  for (let row = 0, y = 4; y < BASE_GROUND; row++, y += 16) {
+    for (let x = -16 + (row % 2 ? 8 : 0); x < W + 16; x += 16) ctx.fillRect(x - off, y, 2, 2);
+  }
+}
+
+// collines / montagnes en parallaxe
+function ridge(sc, par, base, amp, wl, col, pointy) {
+  ctx.fillStyle = col;
+  for (let x = 0; x < W; x += 2) {
+    const wx = x + sc * par;
+    let k;
+    if (pointy) k = 1 - Math.abs(((wx / wl) % 2 + 2) % 2 - 1);
+    else k = 0.5 + 0.5 * Math.sin(wx / wl) * Math.cos(wx / (wl * 2.3));
+    const y = Math.round(base - amp * k);
+    ctx.fillRect(x, y, 2, BASE_GROUND + 6 - y);
+  }
+}
+function drawScenery(sc) {
+  const th = cfg.theme;
+  if (th === 'day') {
+    ctx.fillStyle = '#fff';
+    for (let i = 0; i < 4; i++) {                    // nuages
+      const n = W + 80, cx = ((i * 97 - sc * 0.12) % n + n) % n - 40, cy = 26 + (i * 37) % 46;
+      ctx.fillRect(cx, cy, 26, 5); ctx.fillRect(cx + 4, cy - 3, 14, 4); ctx.fillRect(cx + 16, cy - 2, 10, 3);
+    }
+    ridge(sc, 0.2, 128, 26, 38, '#5FCB9A'); ridge(sc, 0.4, 140, 18, 24, '#7ED08A');
+  } else if (th === 'sunset') {
+    ctx.fillStyle = '#FFE27A'; ctx.beginPath(); ctx.arc(232, 118, 24, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#FFB45A'; ctx.fillRect(208, 128, 48, 2); ctx.fillRect(208, 134, 48, 2);
+    ridge(sc, 0.15, 132, 44, 34, '#8E5A9B', true); ridge(sc, 0.35, 142, 28, 26, '#6A3F80', true);
+  } else {
+    ctx.fillStyle = '#FFF6C8'; ctx.beginPath(); ctx.arc(62, 44, 15, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#E8DCA8'; ctx.fillRect(56, 40, 4, 4); ctx.fillRect(66, 49, 3, 3);
+    const tw = Math.floor(performance.now() / 600);
+    ctx.fillStyle = '#fff';
+    for (let i = 0; i < 36; i++) {                   // étoiles qui scintillent
+      if ((i + tw) % 6 === 0) continue;
+      const x = (i * 53 + 17) % W, y = 6 + (i * 29) % 96;
+      ctx.fillRect(x, y, 1, 1); if (i % 5 === 0) { ctx.fillRect(x - 1, y, 3, 1); ctx.fillRect(x, y - 1, 1, 3); }
+    }
+    ridge(sc, 0.2, 128, 26, 38, '#1B2A55'); ridge(sc, 0.4, 140, 18, 24, '#223566');
+  }
+}
+
+function drawGround(sc) {
+  const first = Math.floor(sc / SEG_W), last = Math.floor((sc + W) / SEG_W);
+  for (let i = first; i <= last; i++) {
+    const top = groundTop(i * SEG_W);
+    const x0 = i * SEG_W - sc;
+    ctx.fillStyle = T().ground;
+    ctx.fillRect(x0, top, SEG_W, H - top);
+    ctx.fillStyle = T().groundTop;                       // liseré clair en haut
+    ctx.fillRect(x0, top, SEG_W, 2);
+    ctx.fillStyle = T().zig;                       // zigzags plus foncés
+    for (let x = 0; x < SEG_W; x += 2) {
+      const wxp = i * SEG_W + x;
+      const t = wxp % 8, z = t < 4 ? t : 8 - t;
+      for (let y = top + 9; y < H; y += 16) ctx.fillRect(x0 + x, y + z, 2, 2);
+    }
+  }
+}
+
+// dessine un sprite retourné verticalement dans le rectangle (x, y, w, h)
+function drawFlipped(spr, x, y) {
+  ctx.save();
+  ctx.translate(x, y); ctx.scale(1, -1);
+  ctx.drawImage(spr, 0, -spr.height);
+  ctx.restore();
+}
+
+// plateforme : herbe dessus ET dessous (on peut marcher des deux côtés)
+function drawPlatform(x, y, w) {
+  const t = PLAT_THICK;
+  ctx.fillStyle = '#8A5A3A'; ctx.fillRect(x, y, w, t);
+  ctx.fillStyle = '#6B4128';
+  for (let i = 4; i < w - 2; i += 6) ctx.fillRect(x + i, y + 3 + ((i / 6) & 1) * 2, 2, 2);
+  ctx.fillStyle = T().ground; ctx.fillRect(x, y, w, 2); ctx.fillRect(x, y + t - 2, w, 2);
+  ctx.fillStyle = T().zig;
+  for (let i = 0; i < w; i += 4) { ctx.fillRect(x + i, y + 2, 2, 1); ctx.fillRect(x + i + 2, y + t - 3, 2, 1); }
+  ctx.fillStyle = T().sky;                           // coins arrondis
+  ctx.fillRect(x, y, 1, 1); ctx.fillRect(x + w - 1, y, 1, 1);
+  ctx.fillRect(x, y + t - 1, 1, 1); ctx.fillRect(x + w - 1, y + t - 1, 1, 1);
+}
+
+// Personnage choisi ; retournée si elle marche à l'envers ; penchée pendant le câlin
+function drawHero(frame, inverted, rot = 0, bob = 0, dx = 0) {
+  ctx.save();
+  ctx.translate(HERO_X + heroDX + 6 + dx, Math.round(fy) + bob);
+  if (rot) ctx.rotate(rot);
+  if (inverted) ctx.scale(1, -1);
+  ctx.drawImage(frame, -frame.width / R / 2, -HERO_H - 1 / R, frame.width / R, frame.height / R);
+  ctx.restore();
+}
+
+// le prisonnier regarde vers la gauche (vers Chacha)
+function drawMan(frame, px, gyv, rot, bob) {
+  ctx.save();
+  ctx.translate(px + 6, gyv + bob);
+  if (rot) ctx.rotate(rot);
+  ctx.scale(-1, 1);
+  ctx.drawImage(frame, -frame.width / R / 2, -HERO_H - 1 / R, frame.width / R, frame.height / R);
+  ctx.restore();
+}
+
+const CAGE_W = 26, CAGE_H = 28;
+function drawCageFrame(x, gy) {
+  const top = gy - CAGE_H, post = '#3F3F4A', hi = '#9A9AA8';
+  ctx.fillStyle = '#8A5A3A'; ctx.fillRect(x - 1, gy - 3, CAGE_W + 2, 3);
+  ctx.fillStyle = '#A8754A'; ctx.fillRect(x - 1, gy - 3, CAGE_W + 2, 1);
+  ctx.fillStyle = 'rgba(20,20,30,.35)'; ctx.fillRect(x + 3, top + 3, CAGE_W - 6, CAGE_H - 6);
+  ctx.fillStyle = post; ctx.fillRect(x, top, 3, CAGE_H); ctx.fillRect(x + CAGE_W - 3, top, 3, CAGE_H);
+  ctx.fillRect(x - 1, top - 2, CAGE_W + 2, 4); ctx.fillRect(x + CAGE_W / 2 - 2, top - 5, 4, 3);
+  ctx.fillStyle = hi; ctx.fillRect(x - 1, top - 2, CAGE_W + 2, 1);
+}
+// grille avant : se relève dans le toit quand la cage s'ouvre
+function drawPortcullis(x, gy, open) {
+  if (open >= 1) return;
+  const top = gy - CAGE_H, ix = x + 3, iw = CAGE_W - 6, iy = top + 2, ih = CAGE_H - 5;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(ix, iy, iw, ih); ctx.clip();
+  ctx.translate(0, -open * ih);
+  ctx.fillStyle = '#6A6A78';
+  for (let i = 0; i < iw; i += 4) ctx.fillRect(ix + 1 + i, iy, 1, ih);
+  ctx.fillStyle = '#4A4A58';
+  ctx.fillRect(ix, iy, iw, 1); ctx.fillRect(ix, iy + Math.floor(ih / 2), iw, 1); ctx.fillRect(ix, iy + ih - 1, iw, 1);
+  ctx.restore();
+}
+
+function drawCageScene(sc) {
+  const x = Math.round(cage.wx - sc), gyc = groundTop(cage.wx + CAGE_W / 2);
+  const f = finale;
+  drawCageFrame(x, gyc);
+  const px = f ? f.px : x + 7;
+  const hp = f && f.phase === 'hug' ? Math.min(1, f.t / 0.5) : 0;
+  const step = f && f.phase === 'out' ? Math.floor(f.t * 8) % 2 : 0;
+  const bob = hp ? -Math.abs(Math.sin(f.t * 7)) * 1.5 * hp : 0;
+  drawMan(prisChar().frames[step], px - 1.5 * hp, groundTop(sc + px + 6), -0.1 * hp, bob);
+  drawPortcullis(x, gyc, f ? f.open : 0);
+}
+
+// bras qui s'enlacent + cœurs qui flottent
+function drawHug() {
+  const f = finale, hp = Math.min(1, f.t / 0.5), me = selChar(), other = prisChar();
+  const bob = -Math.abs(Math.sin(f.t * 7)) * 1.5 * hp;
+  const hc = HERO_X + heroDX + 6 + 1.5 * hp, mc = f.px + 6 - 1.5 * hp, y = Math.round(fy) + bob;
+  ctx.fillStyle = me.sleeve; ctx.fillRect(hc + 1, y - 8, mc - hc + 4, 2.3);      // bras du joueur
+  ctx.fillStyle = me.skin; ctx.fillRect(mc + 5, y - 8, 2, 2.3);
+  ctx.fillStyle = other.sleeve; ctx.fillRect(hc - 5, y - 5.5, mc - hc + 6, 2.3);  // bras du prisonnier
+  ctx.fillStyle = other.skin; ctx.fillRect(hc - 7, y - 5.5, 2, 2.3);
+  const mid = (hc + mc) / 2;
+  const s = 1.2 + 0.25 * Math.sin(f.t * 8);
+  ctx.drawImage(HEART_FULL, mid - 4.5 * s, y - HERO_H - 24 - Math.sin(f.t * 4) * 2, 9 * s, 8 * s);
+  for (const h of f.hearts) {
+    ctx.globalAlpha = Math.max(0, 1 - h.t / 1.6);
+    ctx.drawImage(HEART_FULL, mid + h.dx - 2.5, y - HERO_H - 14 - h.t * 16, 5, 4.4);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawHUD() {
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 8px "Courier New", monospace';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText('Niv. ' + (levelIdx + 1) + '/' + LEVELS.length, 6, 22);
+  ctx.drawImage(COIN, 6, 27); ctx.fillText(String(save.coins), 17, 31);
+  for (let i = 0; i < Math.max(START_LIVES, lives); i++) {
+    ctx.drawImage(i < lives ? HEART_FULL : HEART_EMPTY, 6 + i * 12, 6);
+  }
+  // barre de progression + temps restant
+  const bx = 100, bw = 120, by = 7, bh = 6;
+  ctx.fillStyle = 'rgba(20,40,60,.55)'; ctx.fillRect(bx - 1, by - 1, bw + 2, bh + 2);
+  ctx.fillStyle = '#FFD23A'; ctx.fillRect(bx, by, Math.floor(bw * time / cfg.duration), bh);
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 9px "Courier New", monospace'; ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  ctx.fillText(Math.ceil(cfg.duration - time) + 's', bx + bw + 6, by + 3);
+}
+
+function render() {
+  ctx.setTransform(R, 0, 0, R, 0, 0);
+  const sc = Math.floor(scroll);
+  ctx.save();
+  if (shake > 0) ctx.translate(Math.round((Math.random() - .5) * 4), Math.round((Math.random() - .5) * 4));
+
+  drawBackground(sc);
+  drawScenery(sc);
+  drawGround(sc);
+
+  for (const p of platforms) drawPlatform(Math.round(p.wx - sc), p.y, p.w);
+  for (const k of pickups) {                         // cœurs bonus qui flottent
+    const y = k.y + Math.sin(time * 5 + k.bob) * 2;
+    if (k.kind === 'coin') {                          // pièce qui tourne
+      const cw = Math.max(1, Math.round(8 * Math.abs(Math.cos(time * 5 + k.bob))));
+      ctx.drawImage(COIN, Math.round(k.wx - sc) + (8 - cw) / 2, Math.round(y), cw, 8);
+    } else {
+      const ps = 1 + 0.1 * Math.sin(time * 8 + k.bob);
+      ctx.drawImage(HEART_FULL, Math.round(k.wx - sc) - (9 * ps - 9) / 2, y - (8 * ps - 8) / 2, 9 * ps, 8 * ps);
+    }
+  }
+
+  for (const o of obstacles) {
+    const x = Math.round(o.wx - sc), y = Math.round(obstacleY(o));
+    const spr = o.kind === 'bird' ? BIRD[Math.floor(time * 8) % 2] : o.anim ? o.anim[Math.floor(performance.now() / 120) % 2] : o.spr;
+    if (o.flip) drawFlipped(spr, x, y); else ctx.drawImage(spr, x, y);
+  }
+
+  // Chacha (clignote pendant l'invincibilité ; à l'envers sous une plateforme)
+  const blinkOff = invincible > 0 && Math.floor(invincible * 10) % 2 === 0;
+  const hug = finale && finale.phase === 'hug';
+  const hp = hug ? Math.min(1, finale.t / 0.5) : 0;
+  let fi = grounded ? Math.floor(scroll / 10) % 2 : 0;
+  if (finale) fi = finale.phase === 'walk' ? Math.floor(finale.t * 8) % 2 : 0;
+  const heroFrame = selChar().frames[fi];
+  if (cage) drawCageScene(sc);
+  if (!blinkOff) drawHero(heroFrame, gdir === -1, 0.1 * hp, hug ? -Math.abs(Math.sin(finale.t * 7)) * 1.5 * hp : 0, 1.5 * hp);
+  if (hug) drawHug();
+
+  for (const p of particles) { ctx.fillStyle = p.col; ctx.fillRect(Math.round(p.x), Math.round(p.y), 2, 2); }
+
+  ctx.restore();
+  if (flash > 0) { ctx.fillStyle = `rgba(255,50,50,${flash})`; ctx.fillRect(0, 0, W, H); }
+  if (state === 'play' || state === 'finale' || state === 'lost' || state === 'win') drawHUD();
+  if (banner > 0 && state === 'play') {              // bandeau "NIVEAU n"
+    ctx.globalAlpha = Math.min(1, banner);
+    ctx.font = 'bold 20px "Courier New", monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#000'; ctx.fillText('NIVEAU ' + (levelIdx + 1), W / 2 + 1, 61);
+    ctx.fillStyle = '#FFD23A'; ctx.fillText('NIVEAU ' + (levelIdx + 1), W / 2, 60);
+    ctx.globalAlpha = 1;
+  }
+}
+
+/* ==========================================================================
+   Boucle principale (delta time)
+   ========================================================================== */
+let last = null;
+function frame(now) {
+  if (last === null) last = now;
+  const dt = Math.min(0.05, (now - last) / 1000);   // plafonné pour éviter les sauts
+  last = now;
+  update(dt);
+  render();
+  requestAnimationFrame(frame);
+}
+document.addEventListener('visibilitychange', () => { last = null; });
+requestAnimationFrame(frame);
+
+// accès console pour déboguer / tester
+window.__game = { get state() { return state; }, get lives() { return lives; }, get time() { return time; },
+                  get obstacles() { return obstacles; }, get scroll() { return scroll; }, get gdir() { return gdir; }, get fy() { return fy; },
+                  get platforms() { return platforms; }, get pickups() { return pickups; }, get save() { return save; }, theme(t) { cfg.theme = t; }, get level() { return levelIdx; }, set lives(v) { lives = v; }, get finale() { return finale; }, warp(t) { time = t; }, start: startGame };
+})();
+</script>
+</body>
+</html>
